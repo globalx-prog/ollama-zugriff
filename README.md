@@ -153,6 +153,10 @@ cd ../open-webui && docker compose up -d
 cd ../tunnel && docker compose up -d
 ```
 
+> [!NOTE]
+> **Existing Open WebUI Volumes & Connections:**
+> If migrating an existing Open WebUI volume where Ollama connections were previously saved in the WebUI, ensure the Ollama URL in **Admin Panel ➔ Settings ➔ Connections ➔ Ollama API** is set to `http://100.102.224.36:11434` (Open WebUI's database config takes precedence over environment variables).
+
 ---
 
 ## 🌐 Dual Access Setup: Cloudflare + Tailscale

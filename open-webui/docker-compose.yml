@@ -31,6 +31,7 @@ services:
     environment:
       # Ollama auf dem Host, erreichbar über die Tailscale-IP (Endzustand B).
       OLLAMA_BASE_URL: http://100.102.224.36:11434
+      OLLAMA_BASE_URLS: http://100.102.224.36:11434
       # Registrierung hart abschalten.
       ENABLE_SIGNUP: "false"
       # HuggingFace & SentenceTransformers Model-Cache im persistenten Volume (/app/backend/data/cache)
