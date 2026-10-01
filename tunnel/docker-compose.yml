@@ -1,0 +1,48 @@
+# Cloudflare Tunnel — Option B (Docker)
+#
+# Betreibt den cloudflared-Connector als Container im bestehenden
+# Docker-Netzwerk "ai-network". Beim remotely managed Tunnel liegt das
+# Routing (öffentlicher Hostname -> lokaler Service) im
+# Cloudflare-Dashboard; hier wird NUR der Connector gestartet.
+#
+# Goldene Regel: zu jedem Zeitpunkt genau EIN cloudflared-Connector aktiv.
+# Option A (systemd) muss gestoppt UND dauerhaft deaktiviert SEIN,
+# bevor dieser Container startet — sonst kämpfen zwei Connectoren um
+# dieselben Tunnel-Verbindungen (502/504, flackernde Logs).
+#
+# Start:  docker compose -f cloudflare/tunnel/docker-compose.yml up -d
+# Logs:   docker logs -f cloudflared
+# Stopp:  docker compose -f cloudflare/tunnel/docker-compose.yml down
+name: cloudflare-tunnel
+
+services:
+  cloudflared:
+    # Version bewusst auf die aktuell laufende Host-Binary-Version gepinnt
+    # (cloudflared 2026.9.3-3), damit sich das Verhalten nicht ändert.
+    image: cloudflare/cloudflared:2026.9.3
+    container_name: cloudflared
+    restart: unless-stopped
+    # Entspricht: cloudflared --no-autoupdate tunnel run
+    # cloudflared liest den Token selbst aus der Env-Variable TUNNEL_TOKEN.
+    command: tunnel --no-autoupdate run
+    environment:
+      # ${TUNNEL_TOKEN} wird aus cloudflare/tunnel/.env interpoliert und
+      # in den Container übergeben.
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    networks:
+      - ai-network
+    # Absicherung: auf Mindestprivilegien reduzieren.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  # Bestehendes, von Docker erstelltes Netzwerk. open-webui und searxng sind
+  # bereits daran angeschlossen -> hier NUR referenzieren, NICHT neu anlegen.
+  ai-network:
+    external: true

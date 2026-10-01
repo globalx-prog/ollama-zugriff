@@ -1,0 +1,11 @@
+# Secrets & Credentials — NIEMALS committen
+**/.env
+*.key
+*.pem
+*.token
+searxng/config/settings.yml
+
+# Backup Directories
+backup/
+backup-ai-stack/
+*.tar.gz

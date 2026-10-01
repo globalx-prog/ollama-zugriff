@@ -1,0 +1,69 @@
+# SearXNG — Docker Compose (Migration aus `docker run`)
+#
+# Sicherheitsänderung ggü. vorher:
+#   - Port nur noch auf 127.0.0.1 gebunden (war 0.0.0.0:8081)
+#     -> nicht mehr aus LAN/WAN erreichbar, nur noch lokal + Tailscale.
+#   - Image gepinnt auf exakte Version (war :latest, moving target)
+#   - Container-Härtung: cap_drop ALL, no-new-privileges, pids_limit
+#
+# WICHTIG — Authentication:
+#   Diese SearXNG-Version (2026.9.25) hat KEIN eingebautes HTTP-Basic-Auth
+#   und KEIN "server.ip_whitelist" (im Quellcode + Docs verifiziert).
+#   SearXNG ist daher NUR durch die Loopback-Bindung geschützt.
+#   => SearXNG wird in dieser Migration NICHT über den Tunnel an das
+#      öffentliche Internet exponiert — sonst wäre es ein offener
+#      Public-Search ohne Auth. Wer es öffentlich mit Auth betreiben will,
+#      braucht einen Auth-Proxy (z. B. nginx). Rezept: cloudflare_tunnel_safety_sicherung.md
+#
+# Die interne Web-Suche von Open WebUI (http://searxng:8080/...) läuft im
+# Docker-Netzwerk weiter und ist von der Loopback-Bindung unbeeinflusst.
+#
+# Start:  docker compose -f cloudflare/searxng/docker-compose.yml up -d
+# Stopp:  docker compose -f cloudflare/searxng/docker-compose.yml down
+name: searxng
+
+services:
+  searxng:
+    # Gepinnt auf exakte Version. Variable aus .env;
+    # Fallback 2026.9.25-12f8b6515 falls .env fehlt.
+    image: searxng/searxng:${SEARXNG_VERSION:-2026.9.25-12f8b6515}
+    container_name: searxng
+    restart: unless-stopped
+    # Der offizielle Image-Entrypoint (/usr/local/searxng/entrypoint.sh) führt
+    # sonst `chown -R searxng:searxng /etc/searxng` aus. Bei dem read-only-Mount
+    # (:ro) schlägt das mit "Read-only file system" fehl und spuckt Fehler in die
+    # Logs. FORCE_OWNERSHIP ist eine offizielle Env-Variable dieses Entrypoints
+    # (Standard "true"); auf "false" gesetzt unterdrückt sie das chown.
+    # (Live-geprüft: Container startet auch ohne die Variable, aber mit chown-
+    #  Fehlern; mit der Variable bleiben die Logs sauber.)
+    environment:
+      FORCE_OWNERSHIP: "false"
+    ports:
+      # Nur auf Loopback binden (Sicherheits-Härtung).
+      - "127.0.0.1:8081:8080"
+    volumes:
+      # Config (nur gelesen) -> read-only binden.
+      - ./config:/etc/searxng:ro
+      # Cache (rein flüchtig; neu angelegt).
+      - searxng-cache:/var/cache/searxng
+    networks:
+      # ai-network: damit Open WebUI (Web-Suche) und cloudflared den
+      # Container-Namen "searxng" im Docker-DNS auflösen können.
+      - ai-network
+    # --- Container-Härtung ---
+    # Alle Linux-Capabilities entfernen.
+    # Kein read_only: SearXNG schreibt zur Laufzeit in diverse Verzeichnisse.
+    # Kein user: — offizielles Image läuft bewusst als root, bricht sonst ab.
+    cap_drop: [ALL]
+    # Privilege-Escalation verhindern.
+    security_opt:
+      - no-new-privileges:true
+    # Prozess-Limit gegen Fork-Bombs.
+    pids_limit: 256
+
+volumes:
+  searxng-cache:
+
+networks:
+  ai-network:
+    external: true
