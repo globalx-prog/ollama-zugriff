@@ -24,34 +24,18 @@ services:
     image: ghcr.io/open-webui/open-webui:${OWUI_VERSION:-v0.11.4}
     container_name: open-webui
     restart: unless-stopped
-    # Ollama läuft auf dem Host (systemd, nicht in Docker). Erreichbarkeit
-    # aus dem Container — zwei konsistente Endzustände (Details + Live-Test in
-    # cloudflare_tunnel_safety_sicherung.md, Abschnitt "Ollama härten"):
-    #
-    #   Endzustand B (EMPFOHLEN, härteste): Ollama auf Tailscale-IP binden
-    #     (OLLAMA_HOST=100.102.224.36:11434) -> hier die Tailscale-IP nutzen.
-    #     Live-verifiziert: dieser Container erreicht 100.102.224.36:11434.
-    #
-    #   Endzustand A (Fallback, Firewall): Ollama bleibt 0.0.0.0:11434 +
-    #     UFW-Regeln -> dann host.docker.internal statt Tailscale-IP nutzen.
-    #
-    # WICHTIG (Lockstep): host.docker.internal zeigt auf das
-    # Docker-Desktop-VM-Gateway, NICHT auf die Tailscale-IP. Bindet Ollama
-    # daher NUR auf die Tailscale-IP, funktioniert host.docker.internal NICHT
-    # mehr -> dann zwingend die Tailscale-IP in OLLAMA_BASE_URL verwenden.
-    # Die Tailscale-IP vorher mit `tailscale ip -4` prüfen (hier: 100.102.224.36).
     extra_hosts:
-      # Bleibt als Fallback für Endzustand A (host.docker.internal) erhalten.
       - "host.docker.internal:host-gateway"
     # WEBUI_SECRET_KEY und OWUI_VERSION aus .env laden.
     env_file: .env
     environment:
       # Ollama auf dem Host, erreichbar über die Tailscale-IP (Endzustand B).
       OLLAMA_BASE_URL: http://100.102.224.36:11434
-      # Registrierung hart abschalten. (In dieser Version ist
-      # ENABLE_SIGNUP die gültige Env-Variable, gelesen in config.py.)
-      # DB-hatte ui.enable_signup=false bereits; das macht es explizit.
+      # Registrierung hart abschalten.
       ENABLE_SIGNUP: "false"
+      # HuggingFace & SentenceTransformers Model-Cache im persistenten Volume (/app/backend/data/cache)
+      HF_HOME: /app/backend/data/cache/embedding/models
+      SENTENCE_TRANSFORMERS_HOME: /app/backend/data/cache/embedding/models
     ports:
       # Nur auf Loopback binden (Sicherheits-Härtung).
       - "127.0.0.1:3000:8080"
@@ -60,28 +44,28 @@ services:
       # wiederverwendet -> kein Datenverlust.
       - open-webui:/app/backend/data
     networks:
-      # ai-network: für den DNS-Namen "searxng" (interne Web-Suche) und
-      # damit cloudflared das Tunnel-Ziel http://open-webui:8080 erreichen
-      # kann (gleicher Container-Name als Alias im Docker-DNS).
       - ai-network
     # --- Container-Härtung ---
-    # Alle Linux-Capabilities entfernen (OWUI braucht keine).
+    # Alle Linux-Capabilities entfernen.
     cap_drop: [ALL]
     # Privilege-Escalation verhindern.
     security_opt:
       - no-new-privileges:true
     # Prozess-Limit gegen Fork-Bombs.
     pids_limit: 512
-    # Dateisystem read-only; Schreibzugriff nur über Volumes und tmpfs.
+    # Dateisystem read-only; Schreibzugriff über Volume (/app/backend/data) und tmpfs (/tmp).
     read_only: true
     tmpfs:
       - /tmp
-      - /app/backend/data/cache
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
 volumes:
   open-webui:
-    # Wiederverwendung des bereits existierenden Named Volumes
-    # (global "open-webui") -> wird NICHT neu angelegt.
     external: true
 
 networks:

@@ -37,7 +37,8 @@ A production-ready, hardened local AI stack running on Ubuntu / Docker Desktop (
 |---|---|---|
 | **All Services** | No Router Port Forwarding | Zero open WAN ports on the home router. |
 | **Open WebUI** | Loopback binding `127.0.0.1:3000` | Inaccessible from local LAN (`192.168.0.x`). |
-| **Open WebUI** | `read_only: true` with tmpfs | Read-only container rootfs prevents persistent malware. |
+| **Open WebUI** | `read_only: true` with tmpfs `/tmp` | Read-only container rootfs prevents persistent malware. |
+| **Open WebUI** | Persistent model cache in volume | HuggingFace embedding cache (`HF_HOME`) stored in volume `open-webui`, enabling instant 6-second startups without 502 Bad Gateway delays. |
 | **Open WebUI** | `cap_drop: [ALL]`, `no-new-privileges` | Complete Linux privilege stripping. |
 | **Open WebUI** | `pids_limit: 512` | Protection against process exhaustion / fork bombs. |
 | **Open WebUI** | `WEBUI_SECRET_KEY` in `.env` (chmod 600) | Static session JWT signing, prevents session loss on recreation. |
@@ -47,6 +48,7 @@ A production-ready, hardened local AI stack running on Ubuntu / Docker Desktop (
 | **SearXNG** | `cap_drop: [ALL]`, `no-new-privileges`, `pids_limit: 256` | Minimal privileges, locked process limits. |
 | **SearXNG** | Config mounted `:ro` + `FORCE_OWNERSHIP="false"` | Immutable configuration directory. |
 | **Ollama** | Bound strictly to Tailscale IP (`100.102.224.36:11434`) | LAN-wide unauthenticated API access closed. |
+| **Ollama CLI** | `export OLLAMA_HOST=100.102.224.36:11434` in `~/.bashrc` | `ollama list`, `ollama pull` work seamlessly from terminal. |
 | **cloudflared** | Docker container, `cap_drop: [ALL]`, `no-new-privileges` | Host systemd service disabled, single connector strictly enforced. |
 | **All Containers**| Version-pinned images | Reproducible, stable builds without unexpected `:latest` or `:main` breaking changes. |
 | **All Containers**| `restart: unless-stopped` | Automatic startup upon system / Docker boot. |
@@ -58,11 +60,11 @@ A production-ready, hardened local AI stack running on Ubuntu / Docker Desktop (
 ```
 .
 ├── open-webui/
-│   ├── docker-compose.yml       # Open WebUI stack definition
+│   ├── docker-compose.yml       # Open WebUI stack definition (pinned v0.11.4 + hardened)
 │   ├── .env.example             # Template for OWUI version & secrets
 │   └── .env                     # (Ignored) Actual secrets
 ├── searxng/
-│   ├── docker-compose.yml       # SearXNG stack definition
+│   ├── docker-compose.yml       # SearXNG stack definition (pinned + hardened)
 │   ├── .env.example             # Template for SearXNG version pin
 │   ├── .env                     # (Ignored) Actual environment
 │   └── config/
@@ -119,7 +121,7 @@ chmod 600 .env
 # nano .env
 ```
 
-### 4. Configure Host Ollama Service
+### 4. Configure Host Ollama Service & CLI
 Edit `/etc/systemd/system/ollama.service`:
 ```ini
 [Service]
@@ -129,6 +131,12 @@ Environment="OLLAMA_HOST=100.102.224.36:11434"
 Reload and restart Ollama:
 ```bash
 sudo systemctl daemon-reload && sudo systemctl restart ollama
+```
+
+Add the Ollama host environment variable to `~/.bashrc` so CLI commands work:
+```bash
+echo 'export OLLAMA_HOST=100.102.224.36:11434' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 ### 5. Start the Stacks
@@ -153,6 +161,13 @@ cd ../tunnel && docker compose up -d
 In the Cloudflare Zero Trust Dashboard:
 - **Tunnel:** Point `openwebui.yourdomain.de` to `http://open-webui:8080` (HTTP).
 - *SearXNG is deliberately NOT mapped to a public hostname.*
+
+### Extra Security Without Tailscale (Cloudflare Access Zero Trust)
+To secure Open WebUI from any browser without needing Tailscale installed:
+1. Go to **Cloudflare Zero Trust Dashboard ➔ Access ➔ Applications**.
+2. Add a **Self-hosted** application for `openwebui.yourdomain.de`.
+3. Create an **Allow** policy requiring Email OTP verification for your email address.
+4. *(Optional)* Enable **2FA (TOTP)** directly in Open WebUI under *Settings ➔ Account ➔ Enable 2FA*.
 
 ### Access via Tailscale Serve (Local & Private)
 Allow authorized Tailnet nodes to access Open WebUI directly:
