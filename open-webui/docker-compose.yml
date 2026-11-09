@@ -1,0 +1,78 @@
+# Open WebUI — Docker Compose (Migration aus `docker run`)
+#
+# Sicherheitsänderung ggü. vorher:
+#   - Port nur noch auf 127.0.0.1 gebunden (war 0.0.0.0:3000)
+#     -> nicht mehr aus LAN/WAN erreichbar, nur noch lokal,
+#        Tailscale und über den Cloudflare-Tunnel.
+#   - Image gepinnt auf stabiles Release (war :main, moving target)
+#   - WEBUI_SECRET_KEY gesetzt (war leer → Zufall bei Neustart)
+#   - Container-Härtung: cap_drop ALL, no-new-privileges, pids_limit, read_only
+#
+# WICHTIG (Ollama-Verbindung):
+#   extra_hosts: host.docker.internal:host-gateway  MUSS bleiben,
+#   sonst kann Open WebUI den Ollama-Server nicht erreichen
+#   (OLLAMA_BASE_URL=http://host.docker.internal:11434).
+#
+# Start:  docker compose -f cloudflare/open-webui/docker-compose.yml up -d
+# Stopp:  docker compose -f cloudflare/open-webui/docker-compose.yml down
+name: open-webui
+
+services:
+  open-webui:
+    # Gepinnt auf stabiles Release. Version-Variable aus .env;
+    # Fallback v0.11.4 falls .env fehlt.
+    image: ghcr.io/open-webui/open-webui:${OWUI_VERSION:-v0.11.4}
+    container_name: open-webui
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # WEBUI_SECRET_KEY und OWUI_VERSION aus .env laden.
+    env_file: .env
+    environment:
+      # Ollama auf dem Host, erreichbar über Tailscale-IP (aus .env) oder host.docker.internal.
+      OLLAMA_BASE_URL: http://${TAILSCALE_IP:-host.docker.internal}:11434
+      OLLAMA_BASE_URLS: http://${TAILSCALE_IP:-host.docker.internal}:11434
+      # Bildgenerierung (Ausbaustufe 2: ComfyUI Native)
+      ENABLE_IMAGE_GENERATION: "True"
+      IMAGE_GENERATION_ENGINE: "comfyui"
+      COMFYUI_BASE_URL: "http://${TAILSCALE_IP:-host.docker.internal}:8188/"
+      # Registrierung hart abschalten.
+      ENABLE_SIGNUP: "false"
+      # HuggingFace & SentenceTransformers Model-Cache im persistenten Volume (/app/backend/data/cache)
+      HF_HOME: /app/backend/data/cache/embedding/models
+      SENTENCE_TRANSFORMERS_HOME: /app/backend/data/cache/embedding/models
+    ports:
+      # Nur auf Loopback binden (Sicherheits-Härtung).
+      - "127.0.0.1:3000:8080"
+    volumes:
+      # Bestehender Named Volume mit den vorhandenen Daten (~1.1 GB) wird
+      # wiederverwendet -> kein Datenverlust.
+      - open-webui:/app/backend/data
+    networks:
+      - ai-network
+    # --- Container-Härtung ---
+    # Alle Linux-Capabilities entfernen.
+    cap_drop: [ALL]
+    # Privilege-Escalation verhindern.
+    security_opt:
+      - no-new-privileges:true
+    # Prozess-Limit gegen Fork-Bombs.
+    pids_limit: 512
+    # Dateisystem read-only; Schreibzugriff über Volume (/app/backend/data) und tmpfs (/tmp).
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  open-webui:
+    external: true
+
+networks:
+  ai-network:
+    external: true

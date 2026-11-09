@@ -1,0 +1,32 @@
+# Secrets & Credentials — NIEMALS committen
+**/.env
+*.key
+*.pem
+*.token
+searxng/config/settings.yml
+
+# Backup & Output Directories
+backup/
+backup-ai-stack/
+output/
+outputs/
+**/output/
+**/outputs/
+temp/
+generated/
+*.tar.gz
+
+# Generierte Bilder, Videos & Audio (NIEMALS committen)
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.mp4
+*.mkv
+*.webm
+*.mov
+*.avi
+*.wav
+*.mp3
+*.flac
